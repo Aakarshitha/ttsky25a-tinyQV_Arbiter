@@ -4,9 +4,6 @@
 // testbench_mvp.sv
 // ============================
 
-// ============================
-// testbench_mvp.sv
-// ============================
 `timescale 1ns/1ps
 import pac_rr_pkg::*;
 
@@ -32,9 +29,6 @@ module tb_pac_rr_mvp;
   logic       data_write;
   logic [7:0] data_in;
   wire  [7:0] data_out;
-
-  // For reading back
-  logic [7:0] rdval;
 
   int SEED, TRIALS, CYCLES;
 
@@ -106,6 +100,31 @@ module tb_pac_rr_mvp;
     write_reg(4'h6, 8'h01);//coomit pulse value to be given as 1 to commi thw shadow reg weights to the act6ual weights(to make sure all weights get updated at same cycle.
   endtask
 
+  // Read {5'b0, busy, grant_idx[1:0]} from 0xE
+  task automatic read_grant_idx(output logic [1:0] gi,
+                                output logic       busy);
+    byte rd;
+    read_reg(4'hE, rd);     // direct literal address
+    gi   = rd[1:0];
+    busy = rd[2];
+  endtask
+
+  // Read {4'b0, grant_vec[3:0]} from 0xF
+  task automatic read_grant_vec(output logic [3:0] gv);
+    byte rd;
+    read_reg(4'hF, rd);     // direct literal address
+    gv = rd[3:0];
+  endtask
+
+  // Convenience: read & print both (uses literals internally)
+  task automatic show_grant_status(string tag="RB");
+    byte rE, rF;
+    read_reg(4'hE, rE);
+    read_reg(4'hF, rF);
+    $display("[%s] t=%0t  busy=%0b  gi=%0d  gv=%04b \n",
+             tag, $time, rE[2], rE[1:0], rF[3:0]);
+  endtask
+
   arbiter_cfg sc = new();//class arbiter_cfg is at the end
 
   // -------------------
@@ -136,44 +155,51 @@ module tb_pac_rr_mvp;
     dut.ready_stub = 1;
     dut.valid_stub = 1;
 
-    repeat (12) begin
-      @(negedge clk);
-      $display("t=%0t gi=%0d gv=%b", $time, dut.grant_idx, dut.grant_vec);
-    end*/
+   // repeat (12) begin
+    //  @(negedge clk);
+    //  $display("t=%0t gi=%0d gv=%b", $time, dut.grant_idx, dut.grant_vec);
+    end
+    
+    
+  // read & print busy/gi/gv a bunch of times
+  repeat (12) begin
+    show_grant_status("T1");
+  end
+    
+    */
 
     //commented for now//
-    /*
-    // === Test 2: Weighted (2:1:1:2) — Directed ===
+    
+ /*   // === Test 2: Weighted (2:1:1:2) — Directed ===
     $display("\n=== Test 2: Weighted 2:1:1:2 ===");
     cfg_weights(2,1,1,2);
     dut.req_stub   = 4'b1111;
     dut.ready_stub = 1;
     dut.valid_stub = 1;
 
+  //  repeat (20) begin
+  //    @(negedge clk);
+  //    $display("t=%0t gi=%0d gv=%b", $time, dut.grant_idx, dut.grant_vec);
+  //  end
+  
+    repeat (2) @(negedge clk);
     repeat (20) begin
-      @(negedge clk);
-      $display("t=%0t gi=%0d gv=%b", $time, dut.grant_idx, dut.grant_vec);
+      show_grant_status("T2");
     end
-*/
+  */
+
 
 
     // === Test 3: Seed-driven constrained-random trials ===
 
     
     if (!$value$plusargs("SEED=%d",   SEED))   SEED   = 2;
-    if (!$value$plusargs("TRIALS=%d", TRIALS)) TRIALS = 8;//was 20
+    if (!$value$plusargs("TRIALS=%d", TRIALS)) TRIALS = 3;//was 20
     if (!$value$plusargs("CYCLES=%d", CYCLES)) CYCLES = 10;
 
     $display("\n=== Test 3: Randomized Trials (SEED=%0d TRIALS=%0d CYCLES=%0d) ===", SEED, TRIALS, CYCLES);
    // void'($urandom(SEED));
     sc.srandom(SEED);  
-
-    //Smoke Test Quick
-   /* assert(sc.randomize() with { rv_code == 2'b11; reqs inside {[1:15]}; }) else $fatal;
-    sc.apply(); sc.show("SMOKE");
-    
-    $display("[APPLY] rv_code=%b ready=%0b valid=%0b reqs=%b", sc.rv_code, sc.ready, sc.valid, sc.reqs);
-    $display("[WIRE ] dut.ready_stub=%0b dut.valid_stub=%0b dut.req_stub=%b", tb_pac_rr_mvp.dut.ready_stub, tb_pac_rr_mvp.dut.valid_stub, tb_pac_rr_mvp.dut.req_stub);*/
 
     repeat (10) @(negedge clk);
 
@@ -184,20 +210,14 @@ module tb_pac_rr_mvp;
       sc.apply();
       sc.show($sformatf("RAND t=%0d", t));
 
-      // Let it run for CYCLES clocks
-      repeat (CYCLES) @(negedge clk);
+    // sample readback CYCLES times
+    for (int c = 0; c < CYCLES; c++) begin
+      show_grant_status($sformatf("T3 t=%0d c=%0d", t, c));
+            //each show_grant_status() internally does two read_reg() calls; each read_reg() waits two negedges. so one show_grant_status() eats 4 negedges worth of sim time.
     end
-
-   /*sc.w = '{4,1,3,3};
-   sc.reqs = 4'b0010;
-   sc.rv_code = 2'b11;  // maps to ready=1, valid=1
-   sc.apply();
-   trial_reset();
-
-    repeat (10) @(negedge clk);*/
-
-
-   // repeat (10) @(negedge clk);  	
+      
+    end
+ 	
 
     $finish;
   end
