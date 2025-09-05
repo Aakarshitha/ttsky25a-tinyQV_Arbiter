@@ -33,26 +33,94 @@ module pac_rr_checker
   logic [2:0] w_T     [4];  // weights as seen in cycle T
   logic [2:0] w_T_d1  [4];  // weights from previous cycle (T-1)
 
+  logic [1:0] exp_idx_T, exp_idx_d1;
+  logic [1:0] rr_ptr_sb;     // scoreboard mirror of RR pointer
+
 
 /////////////////////////////////////////////////////////////////  
   // ---- helpers ---- //
 
+// ---------- snapshots & expected-index pipeline ----------
+  // Round-robin tie-breaker (same as scoreboard version)
+  function automatic logic [1:0] rr_pick_first(input logic [3:0] mask,
+                                               input logic [1:0] rr_ptr);
+    for (int j = 0; j < 4; j++) begin
+      logic [1:0] idx = (rr_ptr + j) % 4;  // was logic'(…)
+      if (mask[idx]) return idx;
+    end
+    return rr_ptr; // shouldn't be used when mask==0
+  endfunction
+
+  // Expected index given eligibility and RR pointer
+  function automatic logic [1:0] exp_idx(input logic [3:0] elig,
+                                         input logic [1:0] rr_ptr);
+    int unsigned maxw = 0;
+    logic [3:0] tie = '0;
+    // 1) find max among eligible
+    for (int i = 0; i < 4; i++) begin
+      if (elig[i]) begin
+        int unsigned wi = f_weight(i); // uses w0..w3 via function below
+        if (wi > maxw) maxw = wi;
+      end
+    end
+    // 2) build tie mask
+    for (int i = 0; i < 4; i++) begin
+      tie[i] = elig[i] && (f_weight(i) == maxw);
+    end
+    // 3) RR among ties
+    return rr_pick_first(tie, rr_ptr);
+  endfunction
 
   // Snapshot every posedge; NBAs ensure preponed sees old values
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
+      // weights snapshot for f_weight_prev()
       for (int i=0;i<4;i++) begin
         w_T[i]    <= '0;
         w_T_d1[i] <= '0;
       end
+
+      gv_q       <= '0;
+      elig_T     <= '0;
+      elig_T_d1  <= '0;
+      max_w_T    <= '0;
+
+      exp_idx_T  <= '0;
+      exp_idx_d1 <= '0;
+      rr_ptr_sb  <= '0;
     end else begin
-      w_T_d1 <= w_T;
-      w_T[0] <= tb_pac_rr_mvp.dut.weight[0];  // or .w0, etc.
-      w_T[1] <= tb_pac_rr_mvp.dut.weight[1];
-      w_T[2] <= tb_pac_rr_mvp.dut.weight[2];
-      w_T[3] <= tb_pac_rr_mvp.dut.weight[3];
+      // weights as-seen-this-cycle (from ports)
+      w_T_d1     <= w_T;
+      w_T[0]     <= w0;
+      w_T[1]     <= w1;
+      w_T[2]     <= w2;
+      w_T[3]     <= w3;
+
+      // grant edge detect
+      gv_q       <= grant_vec;
+
+      // decision-time eligibility (match DUT gating)
+      elig_T_d1  <= elig_T;
+      // If selection also requires ready at pick time, use valid&ready:
+      // elig_T     <= req_stub & {4{valid_stub & ready_stub}};
+      elig_T     <= req_stub & {4{valid_stub}};
+
+      // previous-cycle max weight (no $past needed)
+      max_w_T    <= max_weight_elig(elig_T_d1);
+
+      // expected index pipeline
+      exp_idx_d1 <= exp_idx_T;
+      exp_idx_T  <= exp_idx(elig_T, rr_ptr_sb);
+
+      // mirror ROTATE rule: exit/advance when !req[curr] OR beat accepted
+
+      if (grant_vec != 0) begin
+        if (!req_stub[grant_idx] || (ready_stub && valid_stub))
+          rr_ptr_sb <= (grant_idx + 1) % 4 ;  
+      end
     end
   end
+
 
   function automatic int f_weight_prev (input int i);
     return (i>=0 && i<4) ? w_T_d1[i] : 0;
@@ -80,41 +148,31 @@ module pac_rr_checker
   return mw;
   endfunction
 
-  always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      gv_q <= '0;
-      elig_T  <= '0;
-      elig_T_d1 <= '0;
-      max_w_T <= 0;
-    end else begin    
-      // Include every gate your arbiter uses (valid, ready, backpressure…)
-      gv_q <= grant_vec;
-      elig_T  <= tb_pac_rr_mvp.dut.req_stub & {4{tb_pac_rr_mvp.dut.valid_stub}};
-      elig_T_d1 <= elig_T;
-      max_w_T <= max_weight_elig($past(elig_T));//must use previous value of elig_T to actualy get the eligible requests in the cycle grant was granted
-    end
+
   
-    new_grant = (gv_q == 4'b0) && (grant_vec != 4'b0);
-
-    tie_sz = 0;
-    for (int i=0;i<4;i++) if (req_stub[i] && f_weight_prev(i)==max_w_act) tie_sz++;//was f_weight before
-
-    bp_lvl = (ready_stub && valid_stub) ? 0 :
-             ((ready_stub ||  valid_stub) ? 1 : 2);
-  end//end of always block
-
-//debug logic/code
-  // always @(posedge clk) if ($rose(new_grant)) begin
-  //  $display("Grant_edge @%0t: gi_now=%0d gi_prev=%0d req=%b valid=%0b weights {%0d,%0d,%0d,%0d}, weights w0=%0d,w1=%0d,w2=%0d,w3=%0d",
-        //   $time, grant_idx, $past(grant_idx), req_stub, valid_stub,
-        //   w0, w1, w2, w3, w0, w1, w2, w3);
-  //  $display("   elig_T(prev)=%b max_w_T(prev)=%0d and current elig_T=%b current max_w_T=%d and req_stub=%b \n", $past(elig_T), $past(max_w_T), elig_T, max_w_T, tb_pac_rr_mvp.dut.req_stub);
- // end
+  // compute new_grant from one-hot edge
+  always_comb new_grant = (gv_q == 4'b0) && (grant_vec != 4'b0);
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // ---- Assertions ----
-  property p_max_next;
+
+  // New: expected-index check (decision@T → index@T+1)
+  property p_gi_matches_expected_next;
+    @(posedge clk) disable iff (!rst_n)
+      $rose(new_grant) |=> (grant_idx == exp_idx_d1);
+  endproperty
+
+  assert property (p_gi_matches_expected_next)
+    $display("[SB] OK PASSED Grant expectations t=%0t  gi=%0d  elig=%b  w={%0d,%0d,%0d,%0d}",
+             $time, $sampled(grant_idx), $sampled(elig_T_d1),
+             w0, w1, w2, w3);
+  else
+    $error("[SB] MISMATCH t=%0t  gi=%0d exp=%0d  elig=%b  w={%0d,%0d,%0d,%0d}",
+           $time, $sampled(grant_idx), $sampled(exp_idx_d1), $sampled(elig_T_d1),
+           w0, w1, w2, w3);
+    
+ /* property p_max_next;
       @(posedge clk) disable iff (!rst_n)
     $rose(new_grant) |=> ( f_weight_prev(grant_idx) == max_w_T );//was comparing to $past(max_w_T) before, was f_weight before
     endproperty
@@ -127,7 +185,7 @@ module pac_rr_checker
       $display("END");
      // $error("\n=> NEXT-CYCLE mismatch @%0t: gi=%0d fw1=%0d mw_T(prev)=%0d elig_T(prev)=%b ",
            //  $time, gi1, fw1, $past(max_w_T), $past(elig_T));
-  end
+  end*/ //commented for now
 
   property p_no_x_on_grant_bus;
     @(posedge clk) disable iff (!rst_n)
