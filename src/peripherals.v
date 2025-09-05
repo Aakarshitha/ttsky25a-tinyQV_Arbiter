@@ -333,7 +333,7 @@ module tinyQV_peripherals #(parameter CLOCK_MHZ=64) (
         .user_interrupt(user_interrupts[8])
     );
 
-    tqvp_full_empty i_user_peri09 (
+    tqvp_rebelmike_vga_gfx i_user_peri09 (
         .clk(clk),
         .rst_n(rst_n),
 
@@ -783,7 +783,7 @@ module tinyQV_peripherals #(parameter CLOCK_MHZ=64) (
         .data_ready(data_ready_from_user_peri[19])
     );
 
-    tqvp_fjpolo_rv2a03 i_user_peri36 (
+    tqvp_full_empty i_user_peri36 (
         .clk(clk),
         .rst_n(rst_n),
 
