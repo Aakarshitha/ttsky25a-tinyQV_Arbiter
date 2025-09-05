@@ -33,7 +33,7 @@ module tb_pac_rr_mvp;
   int SEED, TRIALS, CYCLES;
 
   // DUT
-  tqvp_pac_rr dut (
+  tt_um_tt_tinyArb dut (
     .clk(clk), .rst_n(rst_n),
     .ui_in(ui_in), .uo_out(uo_out),
     .address(address), .data_write(data_write),
@@ -41,7 +41,7 @@ module tb_pac_rr_mvp;
   );
 
   // In tb_pac_rr_mvp (after DUT instantiation is fine)
-  bind tqvp_pac_rr pac_rr_checker u_pac_rr_checker (
+  bind tt_um_tt_tinyArb pac_rr_checker u_pac_rr_checker (
     .clk        (clk),
     .rst_n      (rst_n),
 
