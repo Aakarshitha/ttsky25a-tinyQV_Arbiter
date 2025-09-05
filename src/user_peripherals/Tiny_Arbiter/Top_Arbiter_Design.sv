@@ -16,7 +16,7 @@
 `default_nettype none
 `timescale 1ns/1ps
 
-module tqvp_pac_rr import pac_rr_pkg::*; (
+module tt_um_tt_tinyArb import pac_rr_pkg::*; (
     input         clk,
     input         rst_n,
 
