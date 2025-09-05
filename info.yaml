@@ -1,17 +1,17 @@
 # Tiny Tapeout project information
 project:
-  title:        "TinyQV - Crowdsourced Risc-V SoC"      # Project title
-  author:       "Michael Bell, et al"      # Your name
-  discord:      "rebelmike"      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
-  description:  "A Risc-V SoC with peripherals from the Tiny Tapeout Risc-V challenge"      # One line description of what your project does
-  language:     "Verilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
-  clock_hz:     64000000       # Clock frequency in Hz (or 0 if not applicable)
+  title:        "Tiny Arbiter"      # Project title
+  author:       "Aakarshitha Suresh"      # Your name
+  discord:      "aakarshitha1847"      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
+  description:  "A weighted round-robin arbiter with configurable per-master weights, ready/valid handshaking, and register-mapped control for fair and programmable request scheduling for the Tiny Tapeout Risc-V challenge"      # One line description of what your project does
+  language:     "SystemVerilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
+  clock_hz:     10000000       # For me 10MHz, Clock frequency in Hz (or 0 if not applicable)
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
   tiles: "8x4"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
 
   # Your top module name must start with "tt_um_". Make it unique by including your github username:
-  top_module:  "tt_um_tt_tinyQV"
+  top_module:  "tt_um_tt_tinyArb"
 
   # List your project's source files here.
   # Source files must be in ./src and you must list each source file separately, one per line.
@@ -136,6 +136,11 @@ project:
     - "tinyQV/peri/uart/uart_tx.v"
     - "user_peripherals/affinex/mul.sv"
     - "user_peripherals/affinex/tqvp_affinex.sv"
+    - "user_peripherals/Tiny_Arbiter/RR_Checker.sv"
+    - "user_peripherals/Tiny_Arbiter/RR_Core.sv"
+    - "user_peripherals/Tiny_Arbiter/RR_Pkg.sv"
+    - "user_peripherals/Tiny_Arbiter/Tiny_Arbiter_SV_Testbench.sv"
+    - "user_peripherals/Tiny_Arbiter/Top_Arbiter_Design.sv"
 
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
